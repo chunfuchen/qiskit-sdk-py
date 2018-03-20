@@ -53,17 +53,21 @@ class Pauli:
     def __init__(self, v, w):
         """Make the Pauli class."""
 
-        if isinstance(v, list) and isinstance(v, list):
+        if isinstance(v, list) and isinstance(w, list):
             result = Pauli.from_list(v, w)
-            self.v = result.v
-            self.w = result.w
+            self._v = result.v
+            self._w = result.w
+            self.v = result.v.astype(np.int32)
+            self.w = result.w.astype(np.int32)
             self.numberofqubits = result.v.size
             self.id = self.to_label()
             return
 
-        if isinstance(v, np.ndarray) and isinstance(v, np.ndarray):
-            self.v = v.astype(np.bool)
-            self.w = w.astype(np.bool)
+        if isinstance(v, np.ndarray) and isinstance(w, np.ndarray):
+            self.v = v
+            self.w = w
+            self._v = v.astype(np.bool)
+            self._w = w.astype(np.bool)
             self.numberofqubits = v.size
             self.id = self.to_label()
 
@@ -76,10 +80,10 @@ class Pauli:
     def __str__(self):
         """Output the Pauli as first row v and second row w."""
         stemp = 'v = '
-        for i in self.v:
+        for i in self._v:
             stemp += str(int(i)) + '\t'
         stemp = stemp + '\nw = '
-        for j in self.w:
+        for j in self._w:
             stemp += str(int(j)) + '\t'
         return stemp
 
@@ -87,7 +91,7 @@ class Pauli:
         """Return True if all Pauli terms are equal."""
         bres = False
         if self.numberofqubits == other.numberofqubits:
-            if np.all(self.v == other.v) and np.all(self.w == other.w):
+            if np.all(self._v == other._v) and np.all(self._w == other._w):
                 bres = True
         return bres
 
@@ -96,8 +100,8 @@ class Pauli:
         if self.numberofqubits != other.numberofqubits:
             print('These Paulis cannot be multiplied - different number '
                   'of qubits')
-        v_new = np.logical_xor(self.v, other.v)
-        w_new = np.logical_xor(self.w, other.w)
+        v_new = np.logical_xor(self._v, other._v)
+        w_new = np.logical_xor(self._w, other._w)
         pauli_new = Pauli(v_new, w_new)
         return pauli_new
 
@@ -109,13 +113,13 @@ class Pauli:
         """
         p_label = ''
         for j_index in range(self.numberofqubits):
-            if not self.v[j_index] and not self.w[j_index]:
+            if not self._v[j_index] and not self._w[j_index]:
                 p_label += 'I'
-            elif not self.v[j_index] and self.w[j_index]:
+            elif not self._v[j_index] and self._w[j_index]:
                 p_label += 'X'
-            elif self.v[j_index] and self.w[j_index]:
+            elif self._v[j_index] and self._w[j_index]:
                 p_label += 'Y'
-            elif self.v[j_index] and not self.w[j_index]:
+            elif self._v[j_index] and not self._w[j_index]:
                 p_label += 'Z'
         return p_label
 
@@ -133,13 +137,13 @@ class Pauli:
         id_ = np.array([[1, 0], [0, 1]], dtype=complex)
         matrix = 1
         for k in range(self.numberofqubits):
-            if not self.v[k] and not self.w[k]:
+            if not self._v[k] and not self._w[k]:
                 new = id_
-            elif self.v[k] and not self.w[k]:
+            elif self._v[k] and not self._w[k]:
                 new = z
-            elif not self.v[k] and self.w[k]:
+            elif not self._v[k] and self._w[k]:
                 new = x
-            elif self.v[k] and self.w[k]:
+            elif self._v[k] and self._w[k]:
                 new = y
             else:
                 print('the string is not of the form 0 and 1')
@@ -162,13 +166,13 @@ class Pauli:
         id_ = sparse.csr_matrix(np.array([[1, 0], [0, 1]], dtype=complex))
         matrix = 1
         for k in range(self.numberofqubits):
-            if not self.v[k] and not self.w[k]:
+            if not self._v[k] and not self._w[k]:
                 new = id_
-            elif self.v[k] and not self.w[k]:
+            elif self._v[k] and not self._w[k]:
                 new = z
-            elif not self.v[k] and self.w[k]:
+            elif not self._v[k] and self._w[k]:
                 new = x
-            elif self.v[k] and self.w[k]:
+            elif self._v[k] and self._w[k]:
                 new = y
             else:
                 print('the string is not of the form 0 and 1')
@@ -195,26 +199,26 @@ def sgn_prod(P1, P2):
     phase = 1
     phase_change = 0
     for i in range(P1.v.size):
-        if P1.v[i] and not P1.w[i]: #Z
-            if not P2.w[i]:
+        if P1._v[i] and not P1._w[i]: #Z
+            if not P2._w[i]:
                 continue
-            if P2.v[i]: #Y
+            if P2._v[i]: #Y
                 phase_change -= 1
             else: #X
                 phase_change += 1
-        elif not P1.v[i] and P1.w[i]: #X
-            if not P2.v[i]:
+        elif not P1._v[i] and P1._w[i]: #X
+            if not P2._v[i]:
                 continue
-            if not P2.w[i]: #Z
+            if not P2._w[i]: #Z
                 phase_change -= 1
             else: #Y
                 phase_change += 1
-        elif P1.v[i] and P1.w[i]: #Y
-            if not np.logical_xor(P2.v[i], P2.w[i]):
+        elif P1._v[i] and P1._w[i]: #Y
+            if not np.logical_xor(P2._v[i], P2._w[i]):
                 continue
-            if not P2.v[i]: #X
+            if not P2._v[i]: #X
                 phase_change -= 1
-            elif P2.v[i]: #Z
+            elif P2._v[i]: #Z
                 phase_change += 1
             # if not P2.v[i] and P2.w[i]: #X
             #     phase_change -= 1
