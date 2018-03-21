@@ -54,36 +54,26 @@ class Pauli:
         """Make the Pauli class."""
 
         if isinstance(v, list) and isinstance(w, list):
-            result = Pauli.from_list(v, w)
-            self._v = result.v
-            self._w = result.w
-            self.v = result.v.astype(np.int32)
-            self.w = result.w.astype(np.int32)
-            self.numberofqubits = result.v.size
+            v = np.asarray(v).astype(np.bool)
+            w = np.asarray(w).astype(np.bool)
+            self._v = v
+            self._w = w
+            self.v = v.astype(np.int32)
+            self.w = w.astype(np.int32)
+            self.numberofqubits = v.size
             self.id = self.to_label()
             return
 
         if isinstance(v, np.ndarray) and isinstance(w, np.ndarray):
-            result = Pauli.from_numpy(v, w)
-            self._v = result.v
-            self._w = result.w
-            self.v = result.v.astype(np.int32)
-            self.w = result.w.astype(np.int32)
-            self.numberofqubits = result.v.size
+            v = v.astype(np.bool)
+            w = w.astype(np.bool)
+            self._v = v
+            self._w = w
+            self.v = v.astype(np.int32)
+            self.w = w.astype(np.int32)
+            self.numberofqubits = v.size
             self.id = self.to_label()
             return
-
-    @classmethod
-    def from_list(cls, v, w):
-        v = np.asarray(v).astype(np.bool)
-        w = np.asarray(w).astype(np.bool)
-        return cls(v, w)
-
-    @classmethod
-    def from_numpy(cls, v, w):
-        v = v.astype(np.bool)
-        w = w.astype(np.bool)
-        return cls(v, w)
 
     def __str__(self):
         """Output the Pauli as first row v and second row w."""
