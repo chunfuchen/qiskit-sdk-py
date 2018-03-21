@@ -64,17 +64,24 @@ class Pauli:
             return
 
         if isinstance(v, np.ndarray) and isinstance(w, np.ndarray):
-            self.v = v
-            self.w = w
-            self._v = v.astype(np.bool)
-            self._w = w.astype(np.bool)
+            self._v = v
+            self._w = w
+            self.v = v.astype(np.int32)
+            self.w = w.astype(np.int32)
             self.numberofqubits = v.size
             self.id = self.to_label()
+            return
 
     @classmethod
     def from_list(cls, v, w):
         v = np.asarray(v).astype(np.bool)
         w = np.asarray(w).astype(np.bool)
+        return cls(v, w)
+
+    @classmethod
+    def from_numpy(cls, v, w):
+        v = v.astype(np.bool)
+        w = w.astype(np.bool)
         return cls(v, w)
 
     def __str__(self):
@@ -276,6 +283,7 @@ def pauli_group(number_of_qubits, case=0):
     Note:
         WARNING THIS IS EXPONENTIAL
     """
+
     if number_of_qubits < 5:
         temp_set = []
         if case == 0:
