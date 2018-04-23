@@ -24,7 +24,7 @@ from copy import deepcopy
 import numpy as np
 
 from qiskit.tools.qi.pauli import Pauli, random_pauli, inverse_pauli, \
-    pauli_group, sgn_prod
+    pauli_group, sgn_prod, label_to_pauli, pauli_singles
 from qiskit.tools.qi.qi import partial_trace, vectorize, devectorize, outer
 from qiskit.tools.qi.qi import state_fidelity, purity, concurrence
 from .common import QiskitTestCase
@@ -157,6 +157,24 @@ class TestPauli(QiskitTestCase):
 
         self.p3 = Pauli(v, w)
 
+    def test_constructor_list(self):
+        v = [1, 0, 1, 0]
+        w = [0, 1, 1, 0]
+        p = Pauli(v, w)
+        length = 4
+        self.assertEqual(p.numberofqubits, length)
+        self.assertEqual(p.to_label(), 'ZXYI')
+        self.assertEqual(p.id, 'ZXYI')
+
+    def test_constructor_npbool(self):
+        v = np.asarray([True, False, True, False])
+        w = np.asarray([False, True, True, False])
+        p = Pauli(v, w)
+        length = 4
+        self.assertEqual(p.numberofqubits, length)
+        self.assertEqual(p.to_label(), 'ZXYI')
+        self.assertEqual(p.id, 'ZXYI')
+
     def test_random_pauli5(self):
         length = 2
         q = random_pauli(length)
@@ -166,6 +184,15 @@ class TestPauli(QiskitTestCase):
         self.assertEqual(len(q.w), length)
         self.assertEqual(len(q.to_label()), length)
         self.assertEqual(len(q.to_matrix()), 2 ** length)
+
+    def test_label_to_pauli(self):
+        label = 'ZXYI'
+        p = label_to_pauli(label)
+
+        v = np.asarray([1, 0, 1, 0])
+        w = np.asarray([0, 1, 1, 0])
+        p2 = Pauli(v, w)
+        self.assertEqual(p, p2)
 
     def test_pauli_invert(self):
         self.log.info("===== p3 =====")
@@ -188,6 +215,10 @@ class TestPauli(QiskitTestCase):
             [0. + 1.j, 0. + 0.j, 0. + 0.j, 0. + 0.j, 0. + 0.j, 0. + 0.j, 0. + 0.j, 0. + 0.j],
             [0. + 0.j, 0. - 1.j, 0. + 0.j, 0. - 0.j, 0. + 0.j, 0. + 0.j, 0. + 0.j, 0. + 0.j]])
         self.assertTrue((self.p3.to_matrix() == m).all())
+
+        self.log.info("\tIn spatrix matrix form:")
+        self.log.info(self.p3.to_spmatrix())
+        self.assertTrue((self.p3.to_spmatrix().toarray() == m).all())
 
         self.log.info("===== r =====")
         r = inverse_pauli(self.p3)
@@ -306,6 +337,14 @@ class TestPauli(QiskitTestCase):
         self.log.info(p1.to_label())
         self.assertEqual(p1.to_label(), 'ZXY')
         self.assertEqual(p2.to_label(), 'IXY')
+
+    def test_pauli_singles(self):
+        qubit_index = 3
+        num_qubits = 5
+        ps = pauli_singles(qubit_index, num_qubits)
+        self.assertEqual(ps[0].to_label(), 'IIXII')
+        self.assertEqual(ps[1].to_label(), 'IIYII')
+        self.assertEqual(ps[2].to_label(), 'IIZII')
 
 
 if __name__ == '__main__':
