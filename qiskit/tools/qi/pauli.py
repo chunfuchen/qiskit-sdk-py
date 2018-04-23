@@ -26,6 +26,7 @@ import copy
 import numpy as np
 from scipy import sparse
 
+
 class Pauli:
     """A simple class representing Pauli Operators.
 
@@ -53,34 +54,37 @@ class Pauli:
     def __init__(self, v, w):
         """Make the Pauli class."""
 
-        if isinstance(v, list) and isinstance(w, list):
-            v = np.asarray(v).astype(np.bool)
-            w = np.asarray(w).astype(np.bool)
-            self._v = v
-            self._w = w
-            self.v = v.astype(np.int32)
-            self.w = w.astype(np.int32)
-            self.numberofqubits = v.size
-            self.id = self.to_label()
-            return
-
         if isinstance(v, np.ndarray) and isinstance(w, np.ndarray):
             v = v.astype(np.bool)
             w = w.astype(np.bool)
             self._v = v
             self._w = w
-            self.v = v.astype(np.int32)
-            self.w = w.astype(np.int32)
+            self.v = v.astype(np.int32)  # backward compatibility
+            self.w = w.astype(np.int32)  # backward compatibility
             self.numberofqubits = v.size
-            self.id = self.to_label()
-            return
+            self.id = self.to_label()    # having a hashable id
+
+        elif isinstance(v, list) and isinstance(w, list):
+            v = np.asarray(v).astype(np.bool)
+            w = np.asarray(w).astype(np.bool)
+            self._v = v
+            self._w = w
+            self.v = v.astype(np.int32)  # backward compatibility
+            self.w = w.astype(np.int32)  # backward compatibility
+            self.numberofqubits = v.size
+            self.id = self.to_label()    # having a hashable id
+
+        else:
+            raise TypeError("v and w must be either list or ndarray \
+                    but {} are provided.".format(type(v)))
 
     def __str__(self):
         """Output the Pauli as first row v and second row w."""
         stemp = 'v = '
         for i in self._v:
             stemp += str(int(i)) + '\t'
-        stemp = stemp + '\nw = '
+        stemp += '\n'
+        stemp += 'w = '
         for j in self._w:
             stemp += str(int(j)) + '\t'
         return stemp
@@ -96,15 +100,15 @@ class Pauli:
     def __mul__(self, other):
         """Multiply two Paulis."""
         if self.numberofqubits != other.numberofqubits:
-            print('These Paulis cannot be multiplied - different number '
-                  'of qubits')
+            raise ValueError("These Paulis cannot be multiplied: \
+                different number of qubits.")
         v_new = np.logical_xor(self._v, other._v)
         w_new = np.logical_xor(self._w, other._w)
         pauli_new = Pauli(v_new, w_new)
         return pauli_new
 
     def to_label(self):
-        """Print out the labels in X, Y, Z format.
+        """Generate string representation of Pauli (IXYZ).
 
         Returns:
             str: pauli label
@@ -144,7 +148,7 @@ class Pauli:
             elif self._v[k] and self._w[k]:
                 new = y
             else:
-                print('the string is not of the form 0 and 1')
+                raise ValueError("the string is not of the form 0 and 1")
             matrix = np.kron(new, matrix)
 
         return matrix
@@ -173,9 +177,10 @@ class Pauli:
             elif self._v[k] and self._w[k]:
                 new = y
             else:
-                print('the string is not of the form 0 and 1')
+                raise ValueError("the string is not of the form 0 and 1")
             matrix = sparse.kron(new, matrix, 'csr')
         return matrix
+
 
 def random_pauli(number_qubits):
     """Return a random Pauli on numberofqubits."""
@@ -191,32 +196,33 @@ def sgn_prod(P1, P2):
     """
 
     if P1.numberofqubits != P2.numberofqubits:
-        print('Paulis cannot be multiplied - different number of qubits')
+        raise ValueError(
+            "Paulis cannot be multiplied - different number of qubits")
 
     paulinew = P1 * P2
     phase = 1
     phase_change = 0
     for i in range(P1.v.size):
-        if P1._v[i] and not P1._w[i]: #Z
+        if P1._v[i] and not P1._w[i]:  # Z
             if not P2._w[i]:
                 continue
-            if P2._v[i]: #Y
+            if P2._v[i]:  # Y
                 phase_change -= 1
-            else: #X
+            else:  # X
                 phase_change += 1
-        elif not P1._v[i] and P1._w[i]: #X
+        elif not P1._v[i] and P1._w[i]:  # X
             if not P2._v[i]:
                 continue
-            if not P2._w[i]: #Z
+            if not P2._w[i]:  # Z
                 phase_change -= 1
-            else: #Y
+            else:  # Y
                 phase_change += 1
-        elif P1._v[i] and P1._w[i]: #Y
+        elif P1._v[i] and P1._w[i]:  # Y
             if not np.logical_xor(P2._v[i], P2._w[i]):
                 continue
-            if not P2._v[i]: #X
+            if not P2._v[i]:  # X
                 phase_change -= 1
-            elif P2._v[i]: #Z
+            elif P2._v[i]:  # Z
                 phase_change += 1
             # if not P2.v[i] and P2.w[i]: #X
             #     phase_change -= 1
@@ -234,11 +240,12 @@ def inverse_pauli(other):
     """Return the inverse of a Pauli."""
     return copy.deepcopy(other)
 
+
 def label_to_pauli(label):
     """Return the pauli of a string ."""
     v = np.zeros(len(label), dtype=np.bool)
     w = np.zeros(len(label), dtype=np.bool)
-    for j, _ in enumerate(label):
+    for j in len(label):
         if label[j] == 'I':
             v[j] = False
             w[j] = False
@@ -252,8 +259,8 @@ def label_to_pauli(label):
             v[j] = False
             w[j] = True
         else:
-            print('something went wrong')
-            return -1
+            raise ValueError(
+                'something went wrong in label, must only contain IXYZ')
     return Pauli(v, w)
 
 
@@ -308,8 +315,9 @@ def pauli_group(number_of_qubits, case=0):
                 temp_set.append(Pauli(v, w))
             return temp_set
 
-    print('please set the number of qubits to less than 5')
-    return -1
+    else:
+        raise ValueError("Please set the number of qubits to less than 5 but \
+         {} is set.".format(number_of_qubits))
 
 
 def pauli_singles(j_index, number_qubits):
