@@ -133,13 +133,14 @@ class Pauli:
         matrix = sparse.coo_matrix(np.array([[1]], dtype=complex))
         for k in range(self.numberofqubits):
             if self.v[k] == 0 and self.w[k] == 0:
-                matrix = sparse.bmat([[matrix, None], [None, matrix]], "coo")
+                temp = [[matrix, None], [None, matrix]]
             elif self.v[k] == 1 and self.w[k] == 0:
-                matrix = sparse.bmat([[matrix, None], [None, -matrix]], "coo")
+                temp = [[matrix, None], [None, -matrix]]
             elif self.v[k] == 0 and self.w[k] == 1:
-                matrix = sparse.bmat([[None, matrix], [matrix, None]], "coo")
+                temp = [[None, matrix], [matrix, None]]
             elif self.v[k] == 1 and self.w[k] == 1:
-                matrix = sparse.bmat([[None, matrix * -1j], [matrix * 1j, None]], "coo")
+                temp = [[None, matrix * -1j], [matrix * 1j, None]]
+            matrix = sparse.bmat(temp, "coo")
 
         return matrix.tocsr()
 
