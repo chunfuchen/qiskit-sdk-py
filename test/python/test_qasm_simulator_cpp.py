@@ -5,7 +5,7 @@
 # This source code is licensed under the Apache License, Version 2.0 found in
 # the LICENSE.txt file in the root directory of this source tree.
 
-# pylint: disable=invalid-name,missing-docstring
+# pylint: disable=missing-docstring
 
 import json
 import unittest
@@ -13,17 +13,15 @@ import unittest
 import numpy as np
 from numpy.linalg import norm
 
-import qiskit
-from qiskit import ClassicalRegister
-from qiskit import QuantumCircuit
-from qiskit import QuantumRegister
+from qiskit import qasm, unroll
+from qiskit import QuantumRegister, ClassicalRegister, QuantumCircuit
 from qiskit.backends.local.qasm_simulator_cpp import (QasmSimulatorCpp,
                                                       cx_error_matrix,
                                                       x90_error_matrix)
 from qiskit.dagcircuit import DAGCircuit
 from qiskit.qobj import Qobj, QobjItem, QobjConfig, QobjHeader, QobjExperiment
 from qiskit.transpiler import transpile
-from .common import QiskitTestCase
+from .common import QiskitTestCase, requires_cpp_simulator
 
 
 class TestLocalQasmSimulatorCpp(QiskitTestCase):
@@ -31,14 +29,15 @@ class TestLocalQasmSimulatorCpp(QiskitTestCase):
     Test job_processor module.
     """
 
+    @requires_cpp_simulator
     def setUp(self):
         self.seed = 88
         self.qasm_filename = self._get_resource_path('qasm/example.qasm')
         with open(self.qasm_filename, 'r') as qasm_file:
             self.qasm_text = qasm_file.read()
-            self.qasm_ast = qiskit.qasm.Qasm(data=self.qasm_text).parse()
-            self.qasm_be = qiskit.unroll.CircuitBackend(['u1', 'u2', 'u3', 'id', 'cx'])
-            self.qasm_circ = qiskit.unroll.Unroller(self.qasm_ast, self.qasm_be).execute()
+            self.qasm_ast = qasm.Qasm(data=self.qasm_text).parse()
+            self.qasm_be = unroll.CircuitBackend(['u1', 'u2', 'u3', 'id', 'cx'])
+            self.qasm_circ = unroll.Unroller(self.qasm_ast, self.qasm_be).execute()
         qr = QuantumRegister(2, 'q')
         cr = ClassicalRegister(2, 'c')
         qc = QuantumCircuit(qr, cr)
@@ -55,7 +54,7 @@ class TestLocalQasmSimulatorCpp(QiskitTestCase):
                       format='json'))
 
         self.qobj = Qobj(
-            id='test_qobj',
+            qobj_id='test_qobj',
             config=QobjConfig(
                 shots=2000, memory_slots=1,
                 max_credits=3,
@@ -68,47 +67,41 @@ class TestLocalQasmSimulatorCpp(QiskitTestCase):
         self.qobj.experiments[0].config = QobjItem(basis_gates='u1,u2,u3,cx,id')
         self.qobj.experiments[1].header.name = 'test_circuit2'
         self.qobj.experiments[1].config = QobjItem(basis_gates='u1,u2,u3,cx,id')
-
-        # Simulator backend
-        try:
-            self.backend = QasmSimulatorCpp()
-        except FileNotFoundError as fnferr:
-            raise unittest.SkipTest(
-                'cannot find {} in path'.format(fnferr))
+        self.backend = QasmSimulatorCpp()
 
     def test_x90_coherent_error_matrix(self):
-        X90 = np.array([[1, -1j], [-1j, 1]]) / np.sqrt(2)
-        U = x90_error_matrix(0., 0.).dot(X90)
-        target = X90
-        self.assertAlmostEqual(norm(U - target), 0.0, places=10,
+        x90 = np.array([[1, -1j], [-1j, 1]]) / np.sqrt(2)
+        u_matrix = x90_error_matrix(0., 0.).dot(x90)
+        target = x90
+        self.assertAlmostEqual(norm(u_matrix - target), 0.0, places=10,
                                msg="identity error matrix")
-        U = x90_error_matrix(np.pi / 2., 0.).dot(X90)
+        u_matrix = x90_error_matrix(np.pi / 2., 0.).dot(x90)
         target = -1j * np.array([[0, 1], [1, 0]])
-        self.assertAlmostEqual(norm(U - target), 0.0, places=10)
-        U = x90_error_matrix(0., np.pi / 2.).dot(X90)
+        self.assertAlmostEqual(norm(u_matrix - target), 0.0, places=10)
+        u_matrix = x90_error_matrix(0., np.pi / 2.).dot(x90)
         target = np.array([[1., -1], [1, 1.]]) / np.sqrt(2.)
-        self.assertAlmostEqual(norm(U - target), 0.0, places=10)
-        U = x90_error_matrix(np.pi / 2, np.pi / 2.).dot(X90)
+        self.assertAlmostEqual(norm(u_matrix - target), 0.0, places=10)
+        u_matrix = x90_error_matrix(np.pi / 2, np.pi / 2.).dot(x90)
         target = np.array([[0., -1], [1, 0.]])
-        self.assertAlmostEqual(norm(U - target), 0.0, places=10)
-        U = x90_error_matrix(0.02, -0.03)
-        self.assertAlmostEqual(norm(U.dot(U.conj().T) - np.eye(2)), 0.0,
+        self.assertAlmostEqual(norm(u_matrix - target), 0.0, places=10)
+        u_matrix = x90_error_matrix(0.02, -0.03)
+        self.assertAlmostEqual(norm(u_matrix.dot(u_matrix.conj().T) - np.eye(2)), 0.0,
                                places=10, msg="Test error matrix is unitary")
 
     def test_cx_coherent_error_matrix(self):
-        CX = np.array([[1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0], [0, 1, 0, 0]])
-        U = cx_error_matrix(0., 0.).dot(CX)
-        target = CX
-        self.assertAlmostEqual(norm(U - target), 0.0, places=10,
+        cx_matrix = np.array([[1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0], [0, 1, 0, 0]])
+        u_matrix = cx_error_matrix(0., 0.).dot(cx_matrix)
+        target = cx_matrix
+        self.assertAlmostEqual(norm(u_matrix - target), 0.0, places=10,
                                msg="identity error matrix")
-        U = cx_error_matrix(np.pi / 2., 0.).dot(CX)
+        u_matrix = cx_error_matrix(np.pi / 2., 0.).dot(cx_matrix)
         target = np.array([[1, 0, 1j, 0],
                            [0, -1j, 0, 1],
                            [1j, 0, 1, 0],
                            [0, 1, 0, -1j]]) / np.sqrt(2)
-        self.assertAlmostEqual(norm(U - target), 0.0, places=10)
-        U = cx_error_matrix(0.03, -0.04)
-        self.assertAlmostEqual(norm(U.dot(U.conj().T) - np.eye(4)), 0.0,
+        self.assertAlmostEqual(norm(u_matrix - target), 0.0, places=10)
+        u_matrix = cx_error_matrix(0.03, -0.04)
+        self.assertAlmostEqual(norm(u_matrix.dot(u_matrix.conj().T) - np.eye(4)), 0.0,
                                places=10, msg="Test error matrix is unitary")
 
     def test_run_qobj(self):

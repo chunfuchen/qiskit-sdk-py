@@ -15,11 +15,10 @@ import os
 import subprocess
 from subprocess import PIPE
 import platform
-import warnings
 
 import numpy as np
 
-from qiskit._result import Result
+from qiskit.result._utils import copy_qasm_from_qobj_into_result, result_from_old_style_dict
 from qiskit.backends import BaseBackend
 from qiskit.backends.local.localjob import LocalJob
 from qiskit.qobj import qobj_to_dict
@@ -73,21 +72,19 @@ class QasmSimulatorCpp(BaseBackend):
 
     def run(self, qobj):
         """Run a qobj on the backend."""
-        return LocalJob(self._run_job, qobj)
+        local_job = LocalJob(self._run_job, qobj)
+        local_job.submit()
+        return local_job
 
     def _run_job(self, qobj):
         self._validate(qobj)
         result = run(qobj, self._configuration['exe'])
-        return Result(result)
+        copy_qasm_from_qobj_into_result(qobj, result)
+
+        return result_from_old_style_dict(
+            result, [circuit.header.name for circuit in qobj.experiments])
 
     def _validate(self, qobj):
-        if qobj.config.shots == 1:
-            warnings.warn('The behavior of getting statevector from simulators '
-                          'by setting shots=1 is deprecated and will be removed. '
-                          'Use the local_statevector_simulator instead, or place '
-                          'explicit snapshot instructions.',
-                          DeprecationWarning)
-
         for experiment in qobj.experiments:
             if 'measure' not in [op.name for
                                  op in experiment.instructions]:
@@ -136,7 +133,9 @@ class CliffordSimulatorCpp(BaseBackend):
         Returns:
             LocalJob: derived from BaseJob
         """
-        return LocalJob(self._run_job, qobj)
+        local_job = LocalJob(self._run_job, qobj)
+        local_job.submit()
+        return local_job
 
     def _run_job(self, qobj):
         self._validate()
@@ -147,7 +146,9 @@ class CliffordSimulatorCpp(BaseBackend):
             qobj['config'] = {'simulator': 'clifford'}
 
         result = run(qobj, self._configuration['exe'])
-        return Result(result)
+
+        return result_from_old_style_dict(
+            result, [circuit.header.name for circuit in qobj.experiments])
 
     def _validate(self):
         return

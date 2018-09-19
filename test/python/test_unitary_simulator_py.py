@@ -5,20 +5,17 @@
 # This source code is licensed under the Apache License, Version 2.0 found in
 # the LICENSE.txt file in the root directory of this source tree.
 
-# pylint: disable=invalid-name,missing-docstring
+# pylint: disable=missing-docstring
 # pylint: disable=redefined-builtin
 
-import cProfile
-import io
-import pstats
 import unittest
 import numpy as np
 
-from qiskit import (qasm, unroll, QuantumCircuit,
-                    QuantumRegister, ClassicalRegister, compile)
+from qiskit import qasm, unroll
+from qiskit import ClassicalRegister, QuantumRegister, QuantumCircuit
+from qiskit import compile
 from qiskit.backends.local.unitary_simulator_py import UnitarySimulatorPy
 from qiskit.qobj import Qobj, QobjItem, QobjExperiment, QobjConfig, QobjHeader
-from ._random_qasm_generator import RandomQasmGenerator
 from .common import QiskitTestCase
 
 
@@ -45,10 +42,10 @@ class LocalUnitarySimulatorTest(QiskitTestCase):
                                   seed=self.seed)
         circuit.header.name = 'test'
 
-        qobj = Qobj(id='unitary',
+        qobj = Qobj(qobj_id='unitary',
                     config=QobjConfig(shots=1,
                                       memory_slots=6,
-                                      max_credits=None),
+                                      max_credits=10),
                     experiments=[circuit],
                     header=QobjHeader(
                         backend_name='local_unitary_simulator_py'))
@@ -65,64 +62,71 @@ class LocalUnitarySimulatorTest(QiskitTestCase):
                                     expected,
                                     rtol=1e-3))
 
-    def test_two_unitary_simulator(self):
-        """test running two circuits
+    def test_local_unitary_simulator(self):
+        """Test unitary simulator."""
+        circuits = self._test_circuits()
+        backend = UnitarySimulatorPy()
+        qobj = compile(circuits, backend=backend)
+        job = backend.run(qobj)
+        sim_unitaries = [job.result().get_unitary(circ) for circ in circuits]
+        reference_unitaries = self._reference_unitaries()
+        norms = [np.trace(np.dot(np.transpose(np.conj(target)), actual))
+                 for target, actual in zip(reference_unitaries, sim_unitaries)]
+        for norm in norms:
+            self.assertAlmostEqual(norm, 8)
 
-        This test is similar to one in test_quantumprogram but doesn't use
-        multiprocessing.
-        """
-        qr = QuantumRegister(2)
-        cr = ClassicalRegister(1)
+    def _test_circuits(self):
+        """Return test circuits for unitary simulator"""
+        qr = QuantumRegister(3)
+        cr = ClassicalRegister(3)
         qc1 = QuantumCircuit(qr, cr)
         qc2 = QuantumCircuit(qr, cr)
+        qc3 = QuantumCircuit(qr, cr)
+        qc4 = QuantumCircuit(qr, cr)
+        qc5 = QuantumCircuit(qr, cr)
+        # Test circuit 1:  HxHxH
         qc1.h(qr)
+        # Test circuit 2: IxCX
         qc2.cx(qr[0], qr[1])
-        backend = UnitarySimulatorPy()
-        qobj = compile([qc1, qc2], backend=backend)
-        job = backend.run(qobj)
-        unitary1 = job.result().get_unitary(qc1)
-        unitary2 = job.result().get_unitary(qc2)
-        unitaryreal1 = np.array([[0.5, 0.5, 0.5, 0.5], [0.5, -0.5, 0.5, -0.5],
-                                 [0.5, 0.5, -0.5, -0.5],
-                                 [0.5, -0.5, -0.5, 0.5]])
-        unitaryreal2 = np.array([[1, 0, 0, 0], [0, 0, 0, 1],
-                                 [0., 0, 1, 0], [0, 1, 0, 0]])
-        norm1 = np.trace(np.dot(np.transpose(np.conj(unitaryreal1)), unitary1))
-        norm2 = np.trace(np.dot(np.transpose(np.conj(unitaryreal2)), unitary2))
-        self.assertAlmostEqual(norm1, 4)
-        self.assertAlmostEqual(norm2, 4)
+        # Test circuit 3:  CXxY
+        qc3.y(qr[0])
+        qc3.cx(qr[1], qr[2])
+        # Test circuit 4: (CX.I).(IxCX).(IxIxX)
+        qc4.h(qr[0])
+        qc4.cx(qr[0], qr[1])
+        qc4.cx(qr[1], qr[2])
+        # Test circuit 5 (X.Z)x(Z.Y)x(Y.X)
+        qc5.x(qr[0])
+        qc5.y(qr[0])
+        qc5.y(qr[1])
+        qc5.z(qr[1])
+        qc5.z(qr[2])
+        qc5.x(qr[2])
+        return [qc1, qc2, qc3, qc4, qc5]
 
-    def profile_unitary_simulator(self):
-        """Profile randomly generated circuits.
-
-        Writes profile results to <this_module>.prof as well as recording
-        to the log file.
-
-        number of circuits = 100.
-        number of operations/circuit in [1, 40]
-        number of qubits in [1, 5]
-        """
-        n_circuits = 100
-        max_depth = 40
-        max_qubits = 5
-        pr = cProfile.Profile()
-        random_circuits = RandomQasmGenerator(seed=self.seed,
-                                              max_depth=max_depth,
-                                              max_qubits=max_qubits)
-        random_circuits.add_circuits(n_circuits, do_measure=False)
-        qp = random_circuits.get_program()
-        pr.enable()
-        qp.execute(qp.get_circuit_names(),
-                   backend=UnitarySimulatorPy())
-        pr.disable()
-        sout = io.StringIO()
-        ps = pstats.Stats(pr, stream=sout).sort_stats('cumulative')
-        self.log.info('------- start profiling UnitarySimulatorPy -----------')
-        ps.print_stats()
-        self.log.info(sout.getvalue())
-        self.log.info('------- stop profiling UnitarySimulatorPy -----------')
-        sout.close()
-        pr.dump_stats(self.moduleName + '.prof')
+    def _reference_unitaries(self):
+        """Return reference unitaries for test circuits"""
+        # Gate matrices
+        gate_h = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
+        gate_x = np.array([[0, 1], [1, 0]])
+        gate_y = np.array([[0, -1j], [1j, 0]])
+        gate_z = np.array([[1, 0], [0, -1]])
+        gate_cx = np.array([[1, 0, 0, 0],
+                            [0, 0, 0, 1],
+                            [0., 0, 1, 0],
+                            [0, 1, 0, 0]])
+        # Unitary matrices
+        target_unitary1 = np.kron(np.kron(gate_h, gate_h), gate_h)
+        target_unitary2 = np.kron(np.eye(2), gate_cx)
+        target_unitary3 = np.kron(gate_cx, gate_y)
+        target_unitary4 = np.dot(np.kron(gate_cx, np.eye(2)),
+                                 np.dot(np.kron(np.eye(2), gate_cx),
+                                        np.kron(np.eye(4), gate_h)))
+        target_unitary5 = np.kron(np.kron(np.dot(gate_x, gate_z),
+                                          np.dot(gate_z, gate_y)),
+                                  np.dot(gate_y, gate_x))
+        return [target_unitary1, target_unitary2, target_unitary3,
+                target_unitary4, target_unitary5]
 
 
 if __name__ == '__main__':

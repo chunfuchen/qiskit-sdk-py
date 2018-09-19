@@ -9,7 +9,10 @@
 
 from types import SimpleNamespace
 
-from ._utils import QobjValidationError, QobjType
+import numpy
+
+from ._validation import QobjValidationError
+from ._utils import QobjType
 
 # Current version of the Qobj schema.
 QOBJ_VERSION = '1.0.0'
@@ -41,10 +44,16 @@ class QobjItem(SimpleNamespace):
         """
         Return a valid representation of `obj` depending on its type.
         """
-        if isinstance(obj, list):
+        if isinstance(obj, (list, tuple)):
             return [cls._expand_item(item) for item in obj]
         if isinstance(obj, QobjItem):
             return obj.as_dict()
+        if isinstance(obj, numpy.integer):
+            return int(obj)
+        if isinstance(obj, numpy.float):
+            return float(obj)
+        if isinstance(obj, numpy.ndarray):
+            return obj.tolist()
         return obj
 
     @classmethod
@@ -96,7 +105,7 @@ class Qobj(QobjItem):
     """Representation of a Qobj.
 
     Attributes:
-        id (str): Qobj identifier.
+        qobj_id (str): Qobj identifier.
         config (QobjConfig): config settings for the Qobj.
         experiments (list[QobjExperiment]): list of experiments.
         header (QobjHeader): headers.
@@ -104,11 +113,11 @@ class Qobj(QobjItem):
         schema_version (str): Qobj version.
     """
 
-    REQUIRED_ARGS = ['id', 'config', 'experiments', 'header']
+    REQUIRED_ARGS = ['qobj_id', 'config', 'experiments', 'header']
 
-    def __init__(self, id, config, experiments, header, **kwargs):
+    def __init__(self, qobj_id, config, experiments, header, **kwargs):
         # pylint: disable=redefined-builtin,invalid-name
-        self.id = id
+        self.qobj_id = qobj_id
         self.config = config
         self.experiments = experiments
         self.header = header

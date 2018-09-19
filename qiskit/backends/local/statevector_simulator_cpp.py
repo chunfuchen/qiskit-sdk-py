@@ -39,7 +39,9 @@ class StatevectorSimulatorCpp(QasmSimulatorCpp):
 
     def run(self, qobj):
         """Run a qobj on the the backend."""
-        return LocalJob(self._run_job, qobj)
+        local_job = LocalJob(self._run_job, qobj)
+        local_job.submit()
+        return local_job
 
     def _run_job(self, qobj):
         """Run a Qobj on the backend."""
@@ -48,22 +50,24 @@ class StatevectorSimulatorCpp(QasmSimulatorCpp):
         # Add final snapshots to circuits
         for experiment in qobj.experiments:
             experiment.instructions.append(
-                QobjInstruction(name='#snapshot', params=[final_state_key])
+                QobjInstruction(name='snapshot', params=[final_state_key])
             )
         result = super()._run_job(qobj)
+        # Replace backend name with current backend
+        result.backend_name = self.name
         # Extract final state snapshot and move to 'statevector' data field
-        for res in result._result['result']:
-            snapshots = res['data']['snapshots']
+        for experiment_result in result.results.values():
+            snapshots = experiment_result.snapshots
             if str(final_state_key) in snapshots:
                 final_state_key = str(final_state_key)
             # Pop off final snapshot added above
             final_state = snapshots.pop(final_state_key, None)
             final_state = final_state['statevector'][0]
             # Add final state to results data
-            res['data']['statevector'] = final_state
+            experiment_result.data['statevector'] = final_state
             # Remove snapshot dict if empty
             if snapshots == {}:
-                res['data'].pop('snapshots', None)
+                experiment_result.data.pop('snapshots', None)
         return result
 
     def _validate(self, qobj):

@@ -11,6 +11,8 @@
 """Main QISKit public functionality."""
 
 import os
+import sys
+import pkgutil
 
 # First, check for required Python and API version
 from . import _util
@@ -25,14 +27,20 @@ from ._instruction import Instruction
 from ._instructionset import InstructionSet
 from ._reset import Reset
 from ._measure import Measure
+from .result import Result
 
 # The qiskit.extensions.x imports needs to be placed here due to the
 # mechanism for adding gates dynamically.
 import qiskit.extensions.standard
 import qiskit.extensions.quantum_initializer
 
-from ._quantumprogram import QuantumProgram
-from ._result import Result
+# Allow extending this namespace. Please note that currently this line needs
+# to be placed *before* the wrapper imports or any non-import code.
+__path__ = pkgutil.extend_path(__path__, __name__)
+
+# Allow extending this namespace. Please note that currently this line needs
+# to be placed *before* the wrapper imports.
+__path__ = pkgutil.extend_path(__path__, __name__)
 
 from .wrapper._wrapper import (
     available_backends, local_backends, remote_backends,

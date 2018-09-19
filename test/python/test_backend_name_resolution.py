@@ -5,24 +5,13 @@
 # This source code is licensed under the Apache License, Version 2.0 found in
 # the LICENSE.txt file in the root directory of this source tree.
 
-# pylint: disable=invalid-name
 
 """Test backend name resolution for functionality groups, deprecations and
 aliases."""
 
 from qiskit import register, get_backend
 from qiskit.wrapper._wrapper import _DEFAULT_PROVIDER
-from qiskit.backends.local import QasmSimulatorCpp
-from .common import requires_qe_access, QiskitTestCase
-
-
-# Cpp backend required
-try:
-    cpp_backend = QasmSimulatorCpp()
-except FileNotFoundError:
-    _skip_cpp = True
-else:
-    _skip_cpp = False
+from .common import requires_qe_access, QiskitTestCase, is_cpp_simulator_available
 
 
 class TestBackendNameResolution(QiskitTestCase):
@@ -31,13 +20,13 @@ class TestBackendNameResolution(QiskitTestCase):
     """
 
     @requires_qe_access
-    def test_deprecated(self, QE_TOKEN, QE_URL, hub=None, group=None, project=None):
+    def test_deprecated(self, qe_token, qe_url):
         """Test that deprecated names map the same backends as the new names.
         """
-        register(QE_TOKEN, QE_URL, hub, group, project)
+        register(qe_token, qe_url)
         deprecated_names = _DEFAULT_PROVIDER.deprecated_backend_names()
         for oldname, newname in deprecated_names.items():
-            if newname == 'local_qasm_simulator_cpp' and _skip_cpp:
+            if newname == 'local_qasm_simulator_cpp' and not is_cpp_simulator_available():
                 continue
 
             with self.subTest(oldname=oldname, newname=newname):
@@ -45,10 +34,10 @@ class TestBackendNameResolution(QiskitTestCase):
 
     @requires_qe_access
     # pylint: disable=unused-argument
-    def test_aliases(self, QE_TOKEN, QE_URL, hub=None, group=None, project=None):
+    def test_aliases(self, qe_token, qe_url):
         """Test that display names of devices map the same backends as the
         regular names."""
-        register(QE_TOKEN, QE_URL)
+        register(qe_token, qe_url)
         aliased_names = _DEFAULT_PROVIDER.aliased_backend_names()
         for display_name, backend_name in aliased_names.items():
             with self.subTest(display_name=display_name,

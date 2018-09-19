@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 # Copyright 2017, IBM.
 #
 # This source code is licensed under the Apache License, Version 2.0 found in
@@ -12,8 +11,11 @@
 import logging
 import re
 import sys
+import platform
 import warnings
+import socket
 from collections import UserDict
+import psutil
 
 API_NAME = 'IBMQuantumExperience'
 logger = logging.getLogger(__name__)
@@ -142,3 +144,57 @@ class AvailableToOperationalDict(UserDict):
                 DeprecationWarning)
 
         return super(AvailableToOperationalDict, self).__getitem__(key)
+
+
+def _parse_ibmq_credentials(url, hub=None, group=None, project=None):
+    """Converts old Q network credentials to new url only
+    format, if needed.
+    """
+    if any([hub, group, project]):
+        url = "https://q-console-api.mybluemix.net/api/" + \
+              "Hubs/{hub}/Groups/{group}/Projects/{project}"
+        url = url.format(hub=hub, group=group, project=project)
+        warnings.warn(
+            "Passing hub/group/project as parameters is deprecated in qiskit "
+            "0.6+. Please use the new URL format provided in the q-console.",
+            DeprecationWarning)
+    return url
+
+
+def local_hardware_info():
+    """Basic hardware information about the local machine.
+
+    Gives actual number of CPU's in the machine, even when hyperthreading is
+    turned on.
+
+    Returns:
+        dict: The hardware information.
+
+    """
+    results = {'os': platform.system()}
+    results['memory'] = psutil.virtual_memory().total / (1024**3)
+    results['cpus'] = psutil.cpu_count(logical=False)
+    return results
+
+
+def _has_connection(hostname, port):
+    """Checks to see if internet connection exists to host
+    via specified port
+
+    Args:
+        hostname (str): Hostname to connect to.
+        port (int): Port to connect to
+
+    Returns:
+        bool: Has connection or not
+
+    Raises:
+        gaierror: No connection established.
+    """
+    try:
+        host = socket.gethostbyname(hostname)
+        socket.create_connection((host, port), 2)
+        return True
+    except socket.gaierror:
+        pass
+    return False

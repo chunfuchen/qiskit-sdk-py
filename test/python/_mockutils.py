@@ -22,7 +22,7 @@ import time
 from qiskit import Result
 from qiskit.backends import BaseBackend
 from qiskit.backends import BaseJob
-from qiskit.qobj import Qobj, QobjItem, QobjConfig, QobjHeader
+from qiskit.qobj import Qobj, QobjItem, QobjConfig, QobjHeader, QobjInstruction
 from qiskit.qobj import QobjExperiment, QobjExperimentHeader
 from qiskit.backends.jobstatus import JobStatus
 from qiskit.backends.baseprovider import BaseProvider
@@ -47,7 +47,7 @@ class DummyProvider(BaseProvider):
         filters = filters or {}
         for key, value in filters.items():
             backends = {name: instance for name, instance in backends.items()
-                        if instance.configuration.get(key) == value}
+                        if instance.configuration().get(key) == value}
         return list(backends.values())
 
 
@@ -74,7 +74,9 @@ class DummySimulator(BaseBackend):
         self.time_alive = time_alive
 
     def run(self, qobj):
-        return DummyJob(self.run_job, qobj)
+        job = DummyJob(self.run_job, qobj)
+        job.submit()
+        return job
 
     # pylint: disable=unused-argument
     def run_job(self, qobj):
@@ -87,13 +89,17 @@ class DummySimulator(BaseBackend):
 
 
 class DummyJob(BaseJob):
-    """dummy simulator job"""
+    """Dummy simulator job"""
     _executor = futures.ProcessPoolExecutor()
 
     def __init__(self, fn, qobj):
         super().__init__()
         self._qobj = qobj
-        self._future = self._executor.submit(fn, qobj)
+        self._future = None
+        self._future_callback = fn
+
+    def submit(self):
+        self._future = self._executor.submit(self._future_callback, self._qobj)
 
     def result(self, timeout=None):
         # pylint: disable=arguments-differ
@@ -103,15 +109,15 @@ class DummyJob(BaseJob):
         return self._future.cancel()
 
     def status(self):
-        if self.running:
+        if self._running:
             _status = JobStatus.RUNNING
-        elif not self.done:
+        elif not self._done:
             _status = JobStatus.QUEUED
-        elif self.cancelled:
+        elif self._cancelled:
             _status = JobStatus.CANCELLED
-        elif self.done:
+        elif self._done:
             _status = JobStatus.DONE
-        elif self.error:
+        elif self._error:
             _status = JobStatus.ERROR
         else:
             raise Exception('Unexpected state of {0}'.format(
@@ -121,25 +127,19 @@ class DummyJob(BaseJob):
                 'status_msg': _status_msg}
 
     @property
-    def cancelled(self):
+    def _cancelled(self):
         return self._future.cancelled()
 
     @property
-    def done(self):
+    def _done(self):
         return self._future.done()
 
     @property
-    def running(self):
+    def _running(self):
         return self._future.running()
 
     @property
-    def error(self):
-        """
-        Return Exception object if exception occured else None.
-
-        Returns:
-            Exception: exception raised by attempting to run job.
-        """
+    def _error(self):
         return self._future.exception(timeout=0)
 
 
@@ -147,11 +147,13 @@ def new_fake_qobj():
     """Create fake `Qobj` and backend instances."""
     backend = FakeBackend()
     return Qobj(
-        id='test-id',
+        qobj_id='test-id',
         config=QobjConfig(shots=1024, memory_slots=1, max_credits=100),
-        header=QobjHeader(backend_name=backend.name),
+        header=QobjHeader(backend_name=backend.name()),
         experiments=[QobjExperiment(
-            instructions=[],
+            instructions=[
+                QobjInstruction(name='barrier', qubits=[1])
+            ],
             header=QobjExperimentHeader(compiled_circuit_qasm='fake-code'),
             config=QobjItem(seed=123456)
         )]
@@ -160,5 +162,7 @@ def new_fake_qobj():
 
 class FakeBackend():
     """Fakes qiskit.backends.basebackend.BaseBackend instances."""
-    def __init__(self):
-        self.name = 'test-backend'
+
+    def name(self):
+        """Return the name of the backend."""
+        return 'test-backend'

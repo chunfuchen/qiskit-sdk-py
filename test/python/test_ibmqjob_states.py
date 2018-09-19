@@ -5,22 +5,24 @@
 # This source code is licensed under the Apache License, Version 2.0 found in
 # the LICENSE.txt file in the root directory of this source tree.
 
-# pylint: disable=invalid-name,missing-docstring,broad-except
+# pylint: disable=missing-docstring,broad-except
 
 
 """IBMQJob states test-suite."""
 
 import unittest
 import time
+from contextlib import suppress
 from IBMQuantumExperience import ApiError
 from qiskit.backends.jobstatus import JobStatus
-from qiskit.backends.ibmq.ibmqjob import IBMQJob, IBMQJobError
+from qiskit.backends.ibmq.ibmqjob import IBMQJobPreQobj, IBMQJob
 from qiskit.backends.ibmq.ibmqjob import API_FINAL_STATES
-from .common import QiskitTestCase
+from qiskit.backends import JobError, JobTimeoutError
+from .common import JobTestCase
 from ._mockutils import new_fake_qobj
 
 
-class TestIBMQJobStates(QiskitTestCase):
+class TestIBMQJobStates(JobTestCase):
     """
     Test ibmqjob module.
     """
@@ -30,132 +32,135 @@ class TestIBMQJobStates(QiskitTestCase):
 
     def test_unrecognized_status(self):
         job = self.run_with_api(UnknownStatusAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
-        self.wait_for_initialization(job)
-        self.assertIsInstance(job.exception, IBMQJobError)
-        self.assertStatus(job, JobStatus.ERROR)
+        with self.assertRaises(JobError):
+            self.wait_for_initialization(job)
 
     def test_validating_job(self):
         job = self.run_with_api(ValidatingAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
+        self.assertEqual(job.status(), JobStatus.INITIALIZING)
 
         self.wait_for_initialization(job)
-        self.assertStatus(job, JobStatus.VALIDATING)
-
-        self._current_api.progress()
+        self.assertEqual(job.status(), JobStatus.VALIDATING)
 
     def test_error_while_creating_job(self):
         job = self.run_with_api(ErrorWhileCreatingAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
+        self.assertEqual(job.status(), JobStatus.INITIALIZING)
 
         self.wait_for_initialization(job)
-        self.assertStatus(job, JobStatus.ERROR)
-
-    def test_error_while_running_job(self):
-        job = self.run_with_api(ErrorWhileRunningAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
-
-        self.wait_for_initialization(job)
-        self.assertStatus(job, JobStatus.RUNNING)
-
-        self._current_api.progress()
-        self.assertStatus(job, JobStatus.ERROR)
+        self.assertEqual(job.status(), JobStatus.ERROR)
 
     def test_error_while_validating_job(self):
         job = self.run_with_api(ErrorWhileValidatingAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
+        self.assertEqual(job.status(), JobStatus.INITIALIZING)
 
         self.wait_for_initialization(job)
-        self.assertStatus(job, JobStatus.VALIDATING)
+        self.assertEqual(job.status(), JobStatus.VALIDATING)
 
         self._current_api.progress()
-        self.assertStatus(job, JobStatus.ERROR)
+        self.assertEqual(job.status(), JobStatus.ERROR)
 
     def test_status_flow_for_non_queued_job(self):
         job = self.run_with_api(NonQueuedAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
+        self.assertEqual(job.status(), JobStatus.INITIALIZING)
 
         self.wait_for_initialization(job)
-        self.assertStatus(job, JobStatus.RUNNING)
+        self.assertEqual(job.status(), JobStatus.RUNNING)
 
         self._current_api.progress()
-        self.assertStatus(job, JobStatus.DONE)
+        self.assertEqual(job.status(), JobStatus.DONE)
 
     def test_status_flow_for_queued_job(self):
         job = self.run_with_api(QueuedAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
+        self.assertEqual(job.status(), JobStatus.INITIALIZING)
 
         self.wait_for_initialization(job)
-        self.assertStatus(job, JobStatus.QUEUED)
+        self.assertEqual(job.status(), JobStatus.QUEUED)
 
         self._current_api.progress()
-        self.assertStatus(job, JobStatus.RUNNING)
+        self.assertEqual(job.status(), JobStatus.RUNNING)
 
         self._current_api.progress()
-        self.assertStatus(job, JobStatus.DONE)
+        self.assertEqual(job.status(), JobStatus.DONE)
 
     def test_status_flow_for_cancellable_job(self):
         job = self.run_with_api(CancellableAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
+        self.assertEqual(job.status(), JobStatus.INITIALIZING)
 
         self.wait_for_initialization(job)
-        self.assertStatus(job, JobStatus.RUNNING)
+        self.assertEqual(job.status(), JobStatus.RUNNING)
 
         can_cancel = job.cancel()
         self.assertTrue(can_cancel)
 
         self._current_api.progress()
-        self.assertStatus(job, JobStatus.CANCELLED)
+        self.assertEqual(job.status(), JobStatus.CANCELLED)
 
     def test_status_flow_for_non_cancellable_job(self):
         job = self.run_with_api(NonCancellableAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
+        self.assertEqual(job.status(), JobStatus.INITIALIZING)
 
         self.wait_for_initialization(job)
-        self.assertStatus(job, JobStatus.RUNNING)
+        self.assertEqual(job.status(), JobStatus.RUNNING)
 
         can_cancel = job.cancel()
         self.assertFalse(can_cancel)
 
         self._current_api.progress()
-        self.assertStatus(job, JobStatus.RUNNING)
+        self.assertEqual(job.status(), JobStatus.RUNNING)
 
     def test_status_flow_for_errored_cancellation(self):
         job = self.run_with_api(ErroredCancellationAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
+        self.assertEqual(job.status(), JobStatus.INITIALIZING)
 
         self.wait_for_initialization(job)
-        self.assertStatus(job, JobStatus.RUNNING)
-
+        self.assertEqual(job.status(), JobStatus.RUNNING)
         can_cancel = job.cancel()
         self.assertFalse(can_cancel)
-        self.assertIsInstance(job.exception, IBMQJobError)
+        self.assertEqual(job.status(), JobStatus.RUNNING)
 
-        self.assertStatus(job, JobStatus.RUNNING)
+    def test_status_flow_for_unable_to_run_valid_qobj(self):
+        """Contrary to other tests, this one is expected to fail even for a
+        non-job-related issue. If the API fails while sending a job, we don't
+        get an id so we can not query for the job status."""
+        job = self.run_with_api(UnavailableRunAPI())
 
-    def test_status_flow_for_invalid_job(self):
-        job = self.run_with_api(UnableToInitializeAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
+        with self.assertRaises(JobError):
+            self.wait_for_initialization(job)
+
+        with self.assertRaises(JobError):
+            job.status()
+
+    def test_api_throws_temporarily_but_job_is_finished(self):
+        job = self.run_with_api(ThrowingNonJobRelatedErrorAPI(errors_before_success=2))
+
+        # First time we query the server...
+        with self.assertRaises(JobError):
+            # The error happens inside wait_for_initialization, the first time
+            # it calls to status() after INITIALIZING.
+            self.wait_for_initialization(job)
+
+        # Also an explicit second time...
+        with self.assertRaises(JobError):
+            job.status()
+
+        # Now the API gets fixed and doesn't throw anymore.
+        self.assertEqual(job.status(), JobStatus.DONE)
+
+    def test_status_flow_for_unable_to_run_invalid_qobj(self):
+        job = self.run_with_api(RejectingJobAPI())
+        self.wait_for_initialization(job)
+        self.assertEqual(job.status(), JobStatus.ERROR)
+
+    def test_error_while_running_job(self):
+        job = self.run_with_api(ErrorWhileRunningAPI())
+        self.assertEqual(job.status(), JobStatus.INITIALIZING)
 
         self.wait_for_initialization(job)
-        self.assertIsInstance(job.exception, IBMQJobError)
-        self.assertStatus(job, JobStatus.ERROR)
+        self.assertEqual(job.status(), JobStatus.RUNNING)
 
-    def test_status_flow_for_throwing_job(self):
-        job = self.run_with_api(ThrowingInitializationAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
-
-        self.wait_for_initialization(job)
-        self.assertIsInstance(job.exception, ApiError)
-        self.assertStatus(job, JobStatus.ERROR)
-
-    def test_status_flow_for_throwing_api(self):
-        job = self.run_with_api(ThrowingAPI())
-        self.assertStatus(job, JobStatus.INITIALIZING)
-
-        self.wait_for_initialization(job)
-        self.assertIsInstance(job.exception, ApiError)
-        self.assertStatus(job, JobStatus.ERROR)
+        self._current_api.progress()
+        self.assertEqual(job.status(), JobStatus.ERROR)
+        self.assertEqual(job.error_message(), 'Error running job')
 
     def test_cancelled_result(self):
         job = self.run_with_api(CancellableAPI())
@@ -163,16 +168,15 @@ class TestIBMQJobStates(QiskitTestCase):
         self.wait_for_initialization(job)
         job.cancel()
         self._current_api.progress()
-        self.assertEqual(job.result().get_status(), 'CANCELLED')
-        self.assertStatus(job, JobStatus.CANCELLED)
+        with self.assertRaises(JobError):
+            job.result().get_status()
+            self.assertEqual(job.status(), JobStatus.CANCELLED)
 
     def test_errored_result(self):
-        job = self.run_with_api(ThrowingInitializationAPI())
-
-        # TODO: Seems inconsistent, should throw while initializating?
+        job = self.run_with_api(ThrowingGetJobAPI())
         self.wait_for_initialization(job)
-        self.assertEqual(job.result().get_status(), 'ERROR')
-        self.assertStatus(job, JobStatus.ERROR)
+        with self.assertRaises(JobError):
+            job.result()
 
     def test_completed_result(self):
         job = self.run_with_api(NonQueuedAPI())
@@ -180,7 +184,7 @@ class TestIBMQJobStates(QiskitTestCase):
         self.wait_for_initialization(job)
         self._current_api.progress()
         self.assertEqual(job.result().get_status(), 'COMPLETED')
-        self.assertStatus(job, JobStatus.DONE)
+        self.assertEqual(job.status(), JobStatus.DONE)
 
     def test_block_on_result_waiting_until_completed(self):
         from concurrent import futures
@@ -191,7 +195,7 @@ class TestIBMQJobStates(QiskitTestCase):
 
         result = job.result()
         self.assertEqual(result.get_status(), 'COMPLETED')
-        self.assertStatus(job, JobStatus.DONE)
+        self.assertEqual(job.status(), JobStatus.DONE)
 
     def test_block_on_result_waiting_until_cancelled(self):
         from concurrent.futures import ThreadPoolExecutor
@@ -200,9 +204,10 @@ class TestIBMQJobStates(QiskitTestCase):
         with ThreadPoolExecutor() as executor:
             executor.submit(_auto_progress_api, self._current_api)
 
-        result = job.result()
-        self.assertEqual(result.get_status(), 'CANCELLED')
-        self.assertStatus(job, JobStatus.CANCELLED)
+        with self.assertRaises(JobError):
+            job.result()
+
+        self.assertEqual(job.status(), JobStatus.CANCELLED)
 
     def test_block_on_result_waiting_until_exception(self):
         from concurrent.futures import ThreadPoolExecutor
@@ -211,23 +216,21 @@ class TestIBMQJobStates(QiskitTestCase):
         with ThreadPoolExecutor() as executor:
             executor.submit(_auto_progress_api, self._current_api)
 
-        result = job.result()
-        self.assertEqual(result.get_status(), 'ERROR')
-        self.assertStatus(job, JobStatus.ERROR)
+        with self.assertRaises(JobError):
+            job.result()
 
     def test_never_complete_result_with_timeout(self):
         job = self.run_with_api(NonQueuedAPI())
 
         self.wait_for_initialization(job)
-        # We never make the API status to progress so it is stuck on RUNNING
-        self.assertEqual(job.result(timeout=1).get_status(), 'ERROR')
-        self.assertStatus(job, JobStatus.RUNNING)
+        with self.assertRaises(JobTimeoutError):
+            job.result(timeout=0.2)
 
-    def test_cancel_while_initializing_is_not_possible_but_does_not_fail(self):
+    def test_cancel_while_initializing_fails(self):
         job = self.run_with_api(CancellableAPI())
         can_cancel = job.cancel()
         self.assertFalse(can_cancel)
-        self.assertStatus(job, JobStatus.INITIALIZING)
+        self.assertEqual(job.status(), JobStatus.INITIALIZING)
 
     def test_only_final_states_cause_datailed_request(self):
         from unittest import mock
@@ -244,65 +247,50 @@ class TestIBMQJobStates(QiskitTestCase):
                 job = self.run_with_api(api())
                 self.wait_for_initialization(job)
 
-                try:
+                with suppress(BaseFakeAPI.NoMoreStatesError):
                     self._current_api.progress()
-                except BaseFakeAPI.NoMoreStatesError:
-                    pass
 
                 with mock.patch.object(self._current_api, 'get_job',
                                        wraps=self._current_api.get_job):
-                    _ = job.status
+                    job.status()
                     if status in API_FINAL_STATES:
                         self.assertTrue(self._current_api.get_job.called)
                     else:
                         self.assertFalse(self._current_api.get_job.called)
 
-    def wait_for_initialization(self, job, timeout=1):
-        """Waits until the job progress from `INITIALIZING` to a different
-        status."""
-        waited = 0
-        wait = 0.1
-        while job.status['status'] == JobStatus.INITIALIZING:
-            time.sleep(wait)
-            waited += wait
-            if waited > timeout:
-                self.fail(
-                    msg="The JOB is still initializing after timeout ({}s)"
-                    .format(timeout)
-                )
+    # TODO: Once qobj results come by default from all the simulator
+    # backends, move to integration tests in test_result.py
+    def test_qobj_result(self):
+        job = self.run_with_api(QObjResultAPI(), job_class=IBMQJob)
 
-    def assertStatus(self, job, status):
-        """Assert the intenal job status is the expected one and also tests
-        if the shorthand method for that status returns `True`."""
-        self.assertEqual(job.status['status'], status)
-        if status == JobStatus.CANCELLED:
-            self.assertTrue(job.cancelled)
-        elif status == JobStatus.DONE:
-            self.assertTrue(job.done)
-        elif status == JobStatus.VALIDATING:
-            self.assertTrue(job.validating)
-        elif status == JobStatus.RUNNING:
-            self.assertTrue(job.running)
-        elif status == JobStatus.QUEUED:
-            self.assertTrue(job.queued)
+        self.wait_for_initialization(job)
+        self._current_api.progress()
+        result = job.result()
+        self.assertEqual(result.get_status(), 'COMPLETED')
+        self.assertEqual(result.get_counts('Bell state'),
+                         {'0x0': 480, '0x3': 490, '0x1': 20, '0x2': 34})
+        self.assertEqual(result.get_counts('Bell state XY'),
+                         {'0x0': 29, '0x3': 15, '0x1': 510, '0x2': 480})
+        self.assertEqual(len(result), 2)
 
-    def run_with_api(self, api):
-        """Creates a new `IBMQJob` instance running with the provided API
-        object."""
+    def run_with_api(self, api, job_class=IBMQJobPreQobj):
+        """Creates a new ``IBMQJobPreQobj`` instance running with the provided API
+        object.
+        """
         self._current_api = api
-        self._current_qjob = IBMQJob(new_fake_qobj(), api, False)
+        self._current_qjob = job_class(api, False, qobj=new_fake_qobj())
+        self._current_qjob.submit()
         return self._current_qjob
 
 
 def _auto_progress_api(api, interval=0.2):
     """Progress a `BaseFakeAPI` instacn every `interval` seconds until reaching
-    the final state."""
-    try:
+    the final state.
+    """
+    with suppress(BaseFakeAPI.NoMoreStatesError):
         while True:
             time.sleep(interval)
             api.progress()
-    except BaseFakeAPI.NoMoreStatesError:
-        pass
 
 
 class BaseFakeAPI():
@@ -331,7 +319,7 @@ class BaseFakeAPI():
         return self._job_status[self._state]
 
     def get_status_job(self, job_id):
-        summary_fields = ['status', 'infoQueue']
+        summary_fields = ['status', 'error', 'infoQueue']
         complete_response = self.get_job(job_id)
         return {key: value for key, value in complete_response.items()
                 if key in summary_fields}
@@ -389,7 +377,8 @@ class NonQueuedAPI(BaseFakeAPI):
 
 class ErrorWhileCreatingAPI(BaseFakeAPI):
     """Class emulating an API processing a job that errors while creating
-    the job."""
+    the job.
+    """
 
     _job_status = [
         {'status': 'ERROR_CREATING_JOB'}
@@ -401,7 +390,7 @@ class ErrorWhileRunningAPI(BaseFakeAPI):
 
     _job_status = [
         {'status': 'RUNNING'},
-        {'status': 'ERROR_RUNNING_JOB'}
+        {'status': 'ERROR_RUNNING_JOB', 'error': 'Error running job'}
     ]
 
 
@@ -415,15 +404,14 @@ class QueuedAPI(BaseFakeAPI):
     ]
 
 
-class UnableToInitializeAPI(BaseFakeAPI):
+class RejectingJobAPI(BaseFakeAPI):
     """Class for emulating an API unable of initializing."""
 
     def run_job(self, *_args, **_kwargs):
-        time.sleep(0.2)
-        return {'error': 'invalid test qobj'}
+        return {'error': 'invalid qobj'}
 
 
-class ThrowingInitializationAPI(BaseFakeAPI):
+class UnavailableRunAPI(BaseFakeAPI):
     """Class for emulating an API throwing before even initializing."""
 
     def run_job(self, *_args, **_kwargs):
@@ -440,6 +428,43 @@ class ThrowingAPI(BaseFakeAPI):
 
     def get_job(self, job_id):
         raise ApiError()
+
+
+class ThrowingNonJobRelatedErrorAPI(BaseFakeAPI):
+    """Class for emulating an scenario where the job is done but the API
+    fails some times for non job-related errors.
+    """
+
+    _job_status = [
+        {'status': 'COMPLETED'}
+    ]
+
+    def __init__(self, errors_before_success=2):
+        super().__init__()
+        self._number_of_exceptions_to_throw = errors_before_success
+
+    def get_job(self, job_id):
+        if self._number_of_exceptions_to_throw != 0:
+            self._number_of_exceptions_to_throw -= 1
+            raise ApiError()
+
+        return super().get_job(job_id)
+
+
+class ThrowingGetJobAPI(BaseFakeAPI):
+    """Class for emulating an API throwing in the middle of execution. But not in
+       get_status_job() , just in get_job().
+       """
+
+    _job_status = [
+        {'status': 'COMPLETED'}
+    ]
+
+    def get_status_job(self, job_id):
+        return self._job_status[self._state]
+
+    def get_job(self, job_id):
+        raise ApiError('Unexpected error')
 
 
 class CancellableAPI(BaseFakeAPI):
@@ -465,7 +490,8 @@ class NonCancellableAPI(BaseFakeAPI):
 
 class ErroredCancellationAPI(BaseFakeAPI):
     """Class for emulating an API with cancellation but throwing while
-    trying."""
+    trying.
+    """
 
     _job_status = [
         {'status': 'RUNNING'},
@@ -477,6 +503,51 @@ class ErroredCancellationAPI(BaseFakeAPI):
 
     def cancel_job(self, job_id, *_args, **_kwargs):
         return {'status': 'Error', 'error': 'test-error-while-cancelling'}
+
+
+# TODO: Remove once qobj results come by default from all the simulator
+# backends.
+class QObjResultAPI(BaseFakeAPI):
+    """Class for emulating a successfully-completed non-queued API."""
+
+    _job_status = [
+        {'status': 'RUNNING'},
+        {
+            'status': 'COMPLETED',
+            'qObjectResult': {
+                'backend_name': 'ibmqx2',
+                'backend_version': '1.1.1',
+                'job_id': 'XC1323XG2',
+                'qobj_id': 'Experiment1',
+                'success': True,
+                'status': 'COMPLETED',
+                'results': [
+                    {
+                        'header': {'name': 'Bell state'},
+                        'shots': 1024,
+                        'status': 'DONE',
+                        'success': True,
+                        'data': {
+                            'counts': {
+                                '0x0': 480, '0x3': 490, '0x1': 20, '0x2': 34
+                            }
+                        }
+                    },
+                    {
+                        'header': {'name': 'Bell state XY'},
+                        'shots': 1024,
+                        'status': 'DONE',
+                        'success': True,
+                        'data': {
+                            'counts': {
+                                '0x0': 29, '0x3': 15, '0x1': 510, '0x2': 480
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ]
 
 
 if __name__ == '__main__':

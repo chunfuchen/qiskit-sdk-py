@@ -17,7 +17,7 @@ import json
 import jsonschema as jsch
 
 schema_tests = []
-verbose_err = False
+verbose_err = True
 any_error = False
 cur_file_path = os.path.dirname(os.path.abspath(__file__))
 # go two directories up
@@ -30,7 +30,8 @@ print(cur_file_path)
 schema_tests.append({"schema": "backend_configuration_schema.json",
                      "examples": [
                          "backend_configuration_openpulse_example.json",
-                         "backend_configuration_openqasm_example.json"
+                         "backend_configuration_openqasm_example.json",
+                         "backend_configuration_openqasm_simulator_example.json"
                          ]})
 schema_tests.append({"schema": "backend_properties_schema.json",
                      "examples": [
@@ -51,6 +52,17 @@ schema_tests.append({"schema": "job_status_schema.json",
 schema_tests.append({"schema": "qobj_schema.json",
                      "examples": [
                          "qobj_openpulse_example.json",
+                         "qobj_openqasm_example.json",
+                         "cpp_two_qubit_gates.json"
+                         ]})
+schema_tests.append({"schema": "ibmq_device_qobj_schema.json",
+                     "examples": [
+                         "qobj_openpulse_example.json",
+                         "qobj_openqasm_example.json"
+                         ]})
+schema_tests.append({"schema": "ibmq_simulator_qobj_schema.json",
+                     "examples": [
+                         "qobj_openpulse_example.json",
                          "qobj_openqasm_example.json"
                          ]})
 schema_tests.append({"schema": "result_schema.json",
@@ -58,7 +70,6 @@ schema_tests.append({"schema": "result_schema.json",
                          "result_openqasm_example.json",
                          "result_openpulse_level_0_example.json",
                          "result_openpulse_level_1_example.json",
-                         "result_snapshots_example.json",
                          "result_statevector_simulator_example.json",
                          "result_unitary_simulator_example.json"
                          ]})
