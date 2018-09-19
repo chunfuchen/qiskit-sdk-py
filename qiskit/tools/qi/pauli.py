@@ -13,6 +13,7 @@ Tools for working with Pauli Operators.
 A simple pauli class and some tools.
 """
 import random
+
 import numpy as np
 from scipy import sparse
 
@@ -144,6 +145,7 @@ class Pauli:
 
         return matrix.tocsr()
 
+
 def random_pauli(number_qubits):
     """Return a random Pauli on numberofqubits."""
     v = np.array(list(bin(random.getrandbits(number_qubits))
@@ -153,7 +155,7 @@ def random_pauli(number_qubits):
     return Pauli(v, w)
 
 
-def sgn_prod(P1, P2):
+def sgn_prod_old(P1, P2):
     """Multiply two Paulis P1*P2 and track the sign.
 
     P3 = P1*P2: X*Y
@@ -185,6 +187,62 @@ def sgn_prod(P1, P2):
             # Z*Y
             phase = -1j * phase
 
+    return paulinew, phase
+
+
+def sgn_prod(P1, P2):
+    """Multiply two Paulis P1*P2 and track the sign.
+
+    P3 = P1*P2: X*Y
+    """
+
+    if P1.numberofqubits != P2.numberofqubits:
+        print('Paulis cannot be multiplied - different number of qubits')
+
+    p1_v = P1.v.astype(np.bool)
+    p1_w = P1.w.astype(np.bool)
+    p2_v = P2.v.astype(np.bool)
+    p2_w = P2.w.astype(np.bool)
+
+    v_new = np.logical_xor(p1_v, p2_v).astype(np.int)
+    w_new = np.logical_xor(p1_w, p2_w).astype(np.int)
+
+    paulinew = Pauli(v_new, w_new)
+    phase = 0  # 1
+
+    for v1, w1, v2, w2 in zip(p1_v, p1_w, p2_v, p2_w):
+        if v1 and not w1:  # Z
+            if w2:
+                phase = phase - 1 if v2 else phase + 1
+        elif not v1 and w1:  # X
+            if v2:
+                phase = phase + 1 if w2 else phase - 1
+        elif v1 and w1:  # Y
+            if not v2 and w2:  # X
+                phase -= 1  # -1j * phase
+            elif v2 and not w2:  # Z
+                phase += 1  # 1j * phase
+
+    # for i in range(len(p1_v)):
+    #     if p1_v[i] and not p1_w[i]:  # Z
+    #         if p2_w[i]:
+    #             if p2_v[i]:  # Y
+    #                 phase -= 1  # -1j * phase
+    #             else:  # X
+    #                 phase += 1  # 1j * phase
+    #     elif not p1_v[i] and p1_w[i]:  # X
+    #         if p2_v[i]:
+    #             if p2_w[i]:  # Y
+    #                 phase += 1  # 1j * phase
+    #             else:  # Z
+    #                 phase -= 1  # -1j * phase
+    #     elif p1_v[i] and p1_w[i]:  # Y
+    #         if not p2_v[i] and p2_w[i]:  # X
+    #             phase -= 1  #  -1j * phase
+    #         elif p2_v[i] and not p2_w[i]:  # Z
+    #             phase += 1  # 1j * phase
+
+    phase = (1j) ** (phase % 4)
     return paulinew, phase
 
 
