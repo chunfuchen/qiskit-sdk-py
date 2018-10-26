@@ -13,6 +13,8 @@ Tools for working with Pauli Operators.
 A simple pauli class and some tools.
 """
 import random
+import copy
+
 import numpy as np
 from scipy import sparse
 
@@ -43,53 +45,75 @@ class Pauli:
 
     def __init__(self, v, w):
         """Make the Pauli class."""
-        self.numberofqubits = len(v)
-        self.v = v
-        self.w = w
+
+        if isinstance(v, np.ndarray) and isinstance(w, np.ndarray):
+            v = v.astype(np.bool)
+            w = w.astype(np.bool)
+            self._v = v
+            self._w = w
+            self.v = v.astype(np.int32)  # backward compatibility
+            self.w = w.astype(np.int32)  # backward compatibility
+            self.numberofqubits = v.size
+            self.id = self.to_label()    # having a hashable id
+
+        elif isinstance(v, list) and isinstance(w, list):
+            v = np.asarray(v).astype(np.bool)
+            w = np.asarray(w).astype(np.bool)
+            self._v = v
+            self._w = w
+            self.v = v.astype(np.int32)  # backward compatibility
+            self.w = w.astype(np.int32)  # backward compatibility
+            self.numberofqubits = v.size
+            self.id = self.to_label()    # having a hashable id
+
+        else:
+            raise TypeError("v and w must be either list or ndarray \
+                    but {} are provided.".format(type(v)))
 
     def __str__(self):
         """Output the Pauli as first row v and second row w."""
         stemp = 'v = '
-        for i in self.v:
-            stemp += str(i) + '\t'
-        stemp = stemp + '\nw = '
-        for j in self.w:
-            stemp += str(j) + '\t'
+        for i in self._v:
+            stemp += str(int(i)) + '\t'
+        stemp += '\n'
+        stemp += 'w = '
+        for j in self._w:
+            stemp += str(int(j)) + '\t'
         return stemp
 
     def __eq__(self, other):
         """Return True if all Pauli terms are equal."""
         bres = False
         if self.numberofqubits == other.numberofqubits:
-            if np.all(self.v == other.v) and np.all(self.w == other.w):
+            if np.all(self._v == other._v) and np.all(self._w == other._w):
                 bres = True
         return bres
 
     def __mul__(self, other):
         """Multiply two Paulis."""
         if self.numberofqubits != other.numberofqubits:
-            print('These Paulis cannot be multiplied - different number '
-                  'of qubits')
-        v_new = (self.v + other.v) % 2
-        w_new = (self.w + other.w) % 2
+            raise ValueError("These Paulis cannot be multiplied: \
+                different number of qubits.")
+        v_new = np.logical_xor(self._v, other._v)
+        w_new = np.logical_xor(self._w, other._w)
         pauli_new = Pauli(v_new, w_new)
         return pauli_new
 
     def to_label(self):
-        """Print out the labels in X, Y, Z format.
+        """Generate string representation of Pauli (IXYZ).
 
         Returns:
             str: pauli label
         """
         p_label = ''
         for j_index in range(self.numberofqubits):
-            if self.v[j_index] == 0 and self.w[j_index] == 0:
+            if not self._v[j_index] and not self._w[j_index]:
                 p_label += 'I'
-            elif self.v[j_index] == 0 and self.w[j_index] == 1:
+            elif not self._v[j_index] and self._w[j_index]:
                 p_label += 'X'
-            elif self.v[j_index] == 1 and self.w[j_index] == 1:
+            elif self._v[j_index] and self._w[j_index]:
                 p_label += 'Y'
-            elif self.v[j_index] == 1 and self.w[j_index] == 0:
+            elif self._v[j_index] and not self._w[j_index]:
                 p_label += 'Z'
         return p_label
 
@@ -107,16 +131,16 @@ class Pauli:
         id_ = np.array([[1, 0], [0, 1]], dtype=complex)
         matrix = 1
         for k in range(self.numberofqubits):
-            if self.v[k] == 0 and self.w[k] == 0:
+            if not self._v[k] and not self._w[k]:
                 new = id_
-            elif self.v[k] == 1 and self.w[k] == 0:
+            elif self._v[k] and not self._w[k]:
                 new = z
-            elif self.v[k] == 0 and self.w[k] == 1:
+            elif not self._v[k] and self._w[k]:
                 new = x
-            elif self.v[k] == 1 and self.w[k] == 1:
+            elif self._v[k] and self._w[k]:
                 new = y
             else:
-                print('the string is not of the form 0 and 1')
+                raise ValueError("the string is not of the form 0 and 1")
             matrix = np.kron(new, matrix)
 
         return matrix
@@ -136,27 +160,24 @@ class Pauli:
         id_ = sparse.csr_matrix(np.array([[1, 0], [0, 1]], dtype=complex))
         matrix = 1
         for k in range(self.numberofqubits):
-            if self.v[k] == 0 and self.w[k] == 0:
+            if not self._v[k] and not self._w[k]:
                 new = id_
-            elif self.v[k] == 1 and self.w[k] == 0:
+            elif self._v[k] and not self._w[k]:
                 new = z
-            elif self.v[k] == 0 and self.w[k] == 1:
+            elif not self._v[k] and self._w[k]:
                 new = x
-            elif self.v[k] == 1 and self.w[k] == 1:
+            elif self._v[k] and self._w[k]:
                 new = y
             else:
-                print('the string is not of the form 0 and 1')
+                raise ValueError("the string is not of the form 0 and 1")
             matrix = sparse.kron(new, matrix, 'csr')
-
         return matrix
 
 
 def random_pauli(number_qubits):
     """Return a random Pauli on numberofqubits."""
-    v = np.array(list(bin(random.getrandbits(number_qubits))
-                      [2:].zfill(number_qubits))).astype(np.int)
-    w = np.array(list(bin(random.getrandbits(number_qubits))
-                      [2:].zfill(number_qubits))).astype(np.int)
+    v = np.random.choice(a=[False, True], size=number_qubits)
+    w = np.random.choice(a=[False, True], size=number_qubits)
     return Pauli(v, w)
 
 
@@ -167,8 +188,8 @@ def sgn_prod(P1, P2):
     """
 
     if P1.numberofqubits != P2.numberofqubits:
-        print('Paulis cannot be multiplied - different number of qubits')
-
+        raise ValueError(
+            "Paulis cannot be multiplied - different number of qubits")
     p1_v = P1.v.astype(np.bool)
     p1_w = P1.w.astype(np.bool)
     p2_v = P2.v.astype(np.bool)
@@ -198,31 +219,29 @@ def sgn_prod(P1, P2):
 
 def inverse_pauli(other):
     """Return the inverse of a Pauli."""
-    v = other.v
-    w = other.w
-    return Pauli(v, w)
+    return copy.deepcopy(other)
 
 
 def label_to_pauli(label):
     """Return the pauli of a string ."""
-    v = np.zeros(len(label))
-    w = np.zeros(len(label))
-    for j, _ in enumerate(label):
+    v = np.zeros(len(label), dtype=np.bool)
+    w = np.zeros(len(label), dtype=np.bool)
+    for j in len(label):
         if label[j] == 'I':
-            v[j] = 0
-            w[j] = 0
+            v[j] = False
+            w[j] = False
         elif label[j] == 'Z':
-            v[j] = 1
-            w[j] = 0
+            v[j] = True
+            w[j] = False
         elif label[j] == 'Y':
-            v[j] = 1
-            w[j] = 1
+            v[j] = True
+            w[j] = True
         elif label[j] == 'X':
-            v[j] = 0
-            w[j] = 1
+            v[j] = False
+            w[j] = True
         else:
-            print('something went wrong')
-            return -1
+            raise ValueError(
+                'something went wrong in label, must only contain IXYZ')
     return Pauli(v, w)
 
 
@@ -243,6 +262,7 @@ def pauli_group(number_of_qubits, case=0):
     Note:
         WARNING THIS IS EXPONENTIAL
     """
+
     if number_of_qubits < 5:
         temp_set = []
         if case == 0:
@@ -254,49 +274,50 @@ def pauli_group(number_of_qubits, case=0):
         elif case == 1:
             # the Pauli set is in tensor order II IX IY IZ XI ...
             for k_index in range(4 ** number_of_qubits):
-                v = np.zeros(number_of_qubits)
-                w = np.zeros(number_of_qubits)
+                v = np.zeros(number_of_qubits, dtype=np.bool)
+                w = np.zeros(number_of_qubits, dtype=np.bool)
                 # looping over all the qubits
                 for j_index in range(number_of_qubits):
                     # making the Pauli for each kindex i fill it in from the
                     # end first
                     element = int((k_index) / (4 ** (j_index))) % 4
                     if element == 0:
-                        v[j_index] = 0
-                        w[j_index] = 0
+                        v[j_index] = False
+                        w[j_index] = False
                     elif element == 1:
-                        v[j_index] = 0
-                        w[j_index] = 1
+                        v[j_index] = False
+                        w[j_index] = True
                     elif element == 2:
-                        v[j_index] = 1
-                        w[j_index] = 1
+                        v[j_index] = True
+                        w[j_index] = True
                     elif element == 3:
-                        v[j_index] = 1
-                        w[j_index] = 0
+                        v[j_index] = True
+                        w[j_index] = False
                 temp_set.append(Pauli(v, w))
             return temp_set
 
-    print('please set the number of qubits to less than 5')
-    return -1
+    else:
+        raise ValueError("Please set the number of qubits to less than 5 but \
+         {} is set.".format(number_of_qubits))
 
 
 def pauli_singles(j_index, number_qubits):
     """Return the single qubit pauli in number_qubits."""
     # looping over all the qubits
     tempset = []
-    v = np.zeros(number_qubits)
-    w = np.zeros(number_qubits)
-    v[j_index] = 0
-    w[j_index] = 1
+    v = np.zeros(number_qubits, dtype=np.bool)
+    w = np.zeros(number_qubits, dtype=np.bool)
+    v[j_index] = False
+    w[j_index] = True
     tempset.append(Pauli(v, w))
-    v = np.zeros(number_qubits)
-    w = np.zeros(number_qubits)
-    v[j_index] = 1
-    w[j_index] = 1
+    v = np.zeros(number_qubits, dtype=np.bool)
+    w = np.zeros(number_qubits, dtype=np.bool)
+    v[j_index] = True
+    w[j_index] = True
     tempset.append(Pauli(v, w))
-    v = np.zeros(number_qubits)
-    w = np.zeros(number_qubits)
-    v[j_index] = 1
-    w[j_index] = 0
+    v = np.zeros(number_qubits, dtype=np.bool)
+    w = np.zeros(number_qubits, dtype=np.bool)
+    v[j_index] = True
+    w[j_index] = False
     tempset.append(Pauli(v, w))
     return tempset
